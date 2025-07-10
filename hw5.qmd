@@ -27,3 +27,33 @@ The main reason to include an interaction variable is to allow the effect of one
 Splitting the model into a training set and test set allows us to see how well the model may perform if it was tasked with prediction future observations. By having test data, we can compare a model's predictions to the actual outcome to measure performance.
 
 ## Task 2: Data Prep
+
+### Packages and Data
+
+```{r}
+#| echo: FALSE
+
+library(tidyverse)
+library(tidymodels)
+library(caret)
+library(yardstick)
+
+heart <- as_tibble(read.csv("heart.csv", header = TRUE))
+```
+
+### Question 1
+
+```{r}
+summary(heart)
+```
+
+The `HeartDisease` variable is quantitative. This does not make sense, since an individual either has a heart disease or they don't, so it is more intuitive to consider this a categorical variable.
+
+### Question 2
+
+```{r}
+heart_new <- heart |>
+  mutate(HasHeartDisease = as.factor(HeartDisease)) |>
+  select(-c(ST_Slope, HeartDisease))
+```
+
