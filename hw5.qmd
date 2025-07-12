@@ -38,6 +38,7 @@ library(tidyverse)
 library(tidymodels)
 library(caret)
 library(yardstick)
+library(glmnet)
 
 heart <- as_tibble(read.csv("heart.csv", header = TRUE))
 ```
@@ -74,7 +75,8 @@ levels(heart_new$HasHeartDisease) <- c("No", "Yes")
 ggplot(data = heart_new, aes(x = MaxHR, y = Age, color = HasHeartDisease)) +
   geom_point() +
   geom_smooth(method = lm, se = FALSE, formula = y ~ x) +
-  labs(x = "Maximum Heart Rate", y = "Age", title = "Age vs. Heart Rate and Presence of Heart Disease", color = "Has Heart Disease") +
+  labs(x = "Maximum Heart Rate", y = "Age", 
+       title = "Age vs. Heart Rate and Presence of Heart Disease", color = "Has Heart Disease") +
   scale_color_manual(values = c("orange", "royalblue"))
 ```
 
@@ -95,3 +97,86 @@ train <- training(heart_split)
 ```
 
 ## Task 5: OLS and LASSO
+
+### Question 1
+
+```{r}
+#
+ols_mlr <- lm(Age ~ MaxHR + HasHeartDisease + MaxHR:HasHeartDisease, data = train)
+summary(ols_mlr)
+```
+
+### Question 2
+
+```{r}
+# Using tidymodels functionality, calculate the RMSE
+ols_mlr_rmse <- yardstick::rmse_vec(test$Age, predict(ols_mlr, newdata = test))
+ols_mlr_rmse
+```
+
+### Question 3
+
+```{r}
+#Create a 10-fold CV
+train_folds <- vfold_cv(train, 10)
+
+#Create an interaction model using a LASSO parameter
+LASSO_recipe <- recipe(Age ~ MaxHR + HasHeartDisease, data = train) |>
+  step_dummy(HasHeartDisease) |>
+  step_normalize(MaxHR) |>
+  step_interact(~MaxHR:starts_with("HasHeartDisease_"))
+
+#Display recipe properties
+LASSO_recipe
+```
+
+### Question 4
+
+```{r}
+#Set spec and workflow
+LASSO_spec <- linear_reg(penalty = tune(), mixture = 1) |>
+  set_engine("glmnet")
+
+LASSO_workflow <- workflow() |>
+  add_recipe(LASSO_recipe) |>
+  add_model(LASSO_spec)
+
+#Set grid
+LASSO_grid <- LASSO_workflow |> #Using 200 as it seems to be a reasonable value
+  tune_grid(resamples = train_folds, grid = grid_regular(penalty(), levels = 200)) 
+
+#Get the model with the best RMSE and fit it to our training data
+rmse_best_fit <- LASSO_grid |>
+  select_best(metric = "rmse")
+
+LASSO <- LASSO_workflow |>
+  finalize_workflow(rmse_best_fit) |>
+  fit(train)
+
+#Report results
+tidy(LASSO)
+```
+
+### Question 5
+
+The model coefficients in the LASSO model are very different from the MLR model, so we might expect the RMSE to be different since the observations did not change.
+
+### Question 6
+
+```{r}
+ols_mlr_rmse #Ordinary Least Squares RMSE
+
+#LASSO RMSE
+LASSO |>
+  predict(test) |>
+  pull() |>
+  rmse_vec(truth = test$Age)
+```
+
+The results are very similar! The LASSO model has the slightest edge in this run, but both models are performing essentially the same.
+
+### Question 7
+
+We standardized the values for our LASSO model, but did not do so for the MLR model, which is likely the biggest factor in why our coefficients are so different. As such, the line of best fit likely falls within a similar spot relative to the observations in both datasets, and thus our RMSE would be similar as well.
+
+## Task 6: Logistic Regression
