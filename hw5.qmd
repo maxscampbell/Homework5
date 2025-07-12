@@ -31,7 +31,8 @@ Splitting the model into a training set and test set allows us to see how well t
 ### Packages and Data
 
 ```{r}
-#| echo: FALSE
+#| message: FALSE
+#| warning: FALSE
 
 library(tidyverse)
 library(tidymodels)
@@ -52,8 +53,45 @@ The `HeartDisease` variable is quantitative. This does not make sense, since an 
 ### Question 2
 
 ```{r}
+#Subset dataset into relevant data of the correct type
+
 heart_new <- heart |>
   mutate(HasHeartDisease = as.factor(HeartDisease)) |>
   select(-c(ST_Slope, HeartDisease))
+
+#Change names of factor levels in HasHeartDisease to improve plot outputs later down the line
+
+levels(heart_new$HasHeartDisease) <- c("No", "Yes")
 ```
 
+## Task 3: EDA
+
+### Question 1
+
+```{r}
+#Plot Age vs. Heart Rate, grouped by Heart Disease status
+
+ggplot(data = heart_new, aes(x = MaxHR, y = Age, color = HasHeartDisease)) +
+  geom_point() +
+  geom_smooth(method = lm, se = FALSE, formula = y ~ x) +
+  labs(x = "Maximum Heart Rate", y = "Age", title = "Age vs. Heart Rate and Presence of Heart Disease", color = "Has Heart Disease") +
+  scale_color_manual(values = c("orange", "royalblue"))
+```
+
+### Question 2
+
+Based on our output above, it looks like the presence of heart disease makes a sizable impact on the regression line. As such, an interaction term appears necessary as heart disease may have a notable effect on an individuals maximum heart rate.
+
+## Task 4: Testing and Training
+
+```{r}
+#Set random seed so results are reproducible
+set.seed(101)
+
+#Split data into a testing set and training set
+heart_split <- initial_split(heart_new, prop = 0.8)
+test <- testing(heart_split)
+train <- training(heart_split)
+```
+
+## Task 5: OLS and LASSO
