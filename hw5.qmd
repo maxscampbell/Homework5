@@ -60,7 +60,8 @@ heart_new <- heart |>
   mutate(HasHeartDisease = as.factor(HeartDisease)) |>
   select(-c(ST_Slope, HeartDisease))
 
-#Change names of factor levels in HasHeartDisease to improve plot outputs later down the line
+#Change names of factor levels in HasHeartDisease to improve plot 
+# outputs later down the line
 
 levels(heart_new$HasHeartDisease) <- c("No", "Yes")
 ```
@@ -76,7 +77,8 @@ ggplot(data = heart_new, aes(x = MaxHR, y = Age, color = HasHeartDisease)) +
   geom_point() +
   geom_smooth(method = lm, se = FALSE, formula = y ~ x) +
   labs(x = "Maximum Heart Rate", y = "Age", 
-       title = "Age vs. Heart Rate and Presence of Heart Disease", color = "Has Heart Disease") +
+       title = "Age vs. Heart Rate and Presence of Heart Disease", 
+       color = "Has Heart Disease") +
   scale_color_manual(values = c("orange", "royalblue"))
 ```
 
@@ -101,7 +103,7 @@ train <- training(heart_split)
 ### Question 1
 
 ```{r}
-#
+#Fit an ordinary least squares multiple linear regression model
 ols_mlr <- lm(Age ~ MaxHR + HasHeartDisease + MaxHR:HasHeartDisease, data = train)
 summary(ols_mlr)
 ```
@@ -164,7 +166,8 @@ The model coefficients in the LASSO model are very different from the MLR model,
 ### Question 6
 
 ```{r}
-ols_mlr_rmse #Ordinary Least Squares RMSE
+#Ordinary Least Squares RMSE
+ols_mlr_rmse 
 
 #LASSO RMSE
 LASSO |>
@@ -180,3 +183,83 @@ The results are very similar! The LASSO model has the slightest edge in this run
 We standardized the values for our LASSO model, but did not do so for the MLR model, which is likely the biggest factor in why our coefficients are so different. As such, the line of best fit likely falls within a similar spot relative to the observations in both datasets, and thus our RMSE would be similar as well.
 
 ## Task 6: Logistic Regression
+
+### Question 1
+
+I am proposing two different logistic regression models for this dataset. The first model will attempt to use a person's age and their maximum heart rate as predictors. The second model will use those same predictors with the addition of the resting Blood Pressure, Cholesterol, and Sex predictors. The purpose of comparing these two models is to allow us to have insight on how significantly our model relies on Age and maximum Heart Rate as predictors. We might expect to see a large difference in accuracy if one of our added predictors in the second model appears to be stronger.
+
+Now, let's begin:
+
+```{r}
+#Using our training folds from the previous exercise, 
+# we will fit two logistic models via a 10-fold CV
+#Define recipes
+log_reg1 <- recipe(HasHeartDisease ~ Age + MaxHR, data = train) |>
+  step_normalize(Age, MaxHR)
+
+log_reg2 <- recipe(HasHeartDisease ~ Age + MaxHR + RestingBP + Cholesterol + Sex, 
+                   data = train) |>
+  step_normalize(Age, MaxHR, RestingBP, Cholesterol) |>
+  step_dummy(Sex)
+
+#Set spec for both models
+logistic_spec <- logistic_reg() |>
+  set_engine("glm")
+
+#Create workflows for each model
+workflow1 <- workflow() |>
+  add_recipe(log_reg1) |>
+  add_model(logistic_spec)
+
+workflow2 <- workflow() |>
+  add_recipe(log_reg2) |>
+  add_model(logistic_spec)
+
+#Fit CV folds
+fit1 <- workflow1 |>
+  fit_resamples(train_folds, metrics = metric_set(accuracy, mn_log_loss))
+
+fit2 <- workflow2 |>
+  fit_resamples(train_folds, metrics = metric_set(accuracy, mn_log_loss))
+
+#Collect metrics and identify best performing model
+rbind(fit1 |> 
+        collect_metrics(),
+      fit2 |> 
+        collect_metrics()
+      ) |>
+  mutate(Model = c("fit1", "fit1", "fit2", "fit2")) |>
+  select(Model, everything())
+```
+
+It does appear that our model with more predictors is a better fit for this dataset. This isn't surprising. However, it is only about 3% more accurate than the model with only two predictors! This tells us that a person's age and maximum heart rate appear to be strong predictors for heart disease, while a person's sex, resting blood pressure, and cholesterol levels can help to paint a more detailed picture in cases where the model is unsure what to predict (as in, produces a value near 0.5).
+
+### Question 2
+
+```{r}
+#Use our test data to see how well our model performs!
+#Fit to training data
+train_fit <- workflow2 |>
+  fit(train)
+
+#Show metrics with the output
+workflow2 |>
+  last_fit(heart_split, metrics = metric_set(accuracy, mn_log_loss)) |>
+  collect_metrics()
+
+conf_mat(test |>
+                  mutate(estimate = train_fit |> 
+                           predict(test) |> 
+                           pull()), #data
+                HasHeartDisease, #truth
+                estimate #fitted estimates
+                )
+```
+
+It appears our model gets the prediction correct about 73.9% of the time! That's not a bad start.
+
+### Question 3
+
+The sensitivity of our model is the rate at which our model correctly predicted that the individual had heart disease, given that the truth is that they had heart disease. In our model, the sensitivity is calculated as $70 / (20 + 70) = 0.777$. This means that our model correctly predicted that an individual with heart disease had heart disease 77.7% of the time.  
+
+The specificity of our model is the rate at which our model correctly predicted that the individual did not have heart disease, given that the truth is that they did not have heart disease. In our model, the specificity is calculated as $66 / (66 + 28) = 0.702$. This means that our model correctly predicted that an individual without heart disease did not have heart disease 70.2% of the time.
